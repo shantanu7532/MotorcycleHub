@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Motorcycle Hub</title>
+<!-- Load Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Use Inter font -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<!-- Load Phosphor Icons for the Support button -->
+<link rel="stylesheet" href="https://unpkg.com/phosphor-icons@1.4.2/src/css/phosphor.css">
+<style>
+body {
+font-family: 'Inter', sans-serif;
+background-color: #f4f7f9;
+}
+.bike-card {
+transition: transform 0.3s, box-shadow 0.3s;
+}
+.bike-card:hover {
+transform: translateY(-5px);
+box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+.modal {
+transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+}
+</style>
+</head>
+<body>
+
+<div id="app" class="min-h-screen flex flex-col">
+    <!-- Main application content will be rendered here -->
+</div>
+
+<script>
+    // --- Global State (No Firebase) ---
+    const state = window.appState = {
+        view: 'login', // 'login', 'dashboard', 'booking', 'confirm', 'mybookings'
+        username: '',
+        selectedBike: null,
+        selectedDates: {
+            start: '',
+            end: ''
+        },
+        searchTerm: '',
+        bookings: [],
+        lastBooking: null,
+        isLoading: false,
+        // Updated bikes array with reliable PLACEHOLDER image URLs
+        bikes: [
+            { id: 1, name: 'KTM Duke 390', type: 'Performance', pricePerDay: 1200, imageUrl: 'https://placehold.co/600x400/805ad5/ffffff?text=KTM+Duke+390', cc: 373, mileage: 28 },
+            { id: 2, name: 'Yamaha R15M', type: 'Sport', pricePerDay: 1000, imageUrl: 'https://placehold.co/600x400/3182ce/ffffff?text=Yamaha+R15M', cc: 155, mileage: 45 },
+            { id: 3, name: 'Hero HF Deluxe', type: 'Commuter', pricePerDay: 400, imageUrl: 'https://placehold.co/600x400/48bb78/ffffff?text=Hero+HF+Deluxe', cc: 97, mileage: 65 },
+            { id: 4, name: 'KTM Enduro 390', type: 'Off-Road', pricePerDay: 1500, imageUrl: 'https://placehold.co/600x400/e53e3e/ffffff?text=KTM+Enduro+390', cc: 373, mileage: 25 },
+            { id: 5, name: 'KTM Adventure 390', type: 'Adventure', pricePerDay: 1400, imageUrl: 'https://placehold.co/600x400/dd6b20/ffffff?text=KTM+Adventure+390', cc: 373, mileage: 30 },
+            { id: 6, name: 'Aprilia RS 457', type: 'Supersport', pricePerDay: 1300, imageUrl: 'https://placehold.co/600x400/9f7aea/ffffff?text=Aprilia+RS+457', cc: 457, mileage: 20 },
+            { id: 7, name: "Honda H'ness CB350", type: 'Cruiser/Retro', pricePerDay: 800, imageUrl: 'https://placehold.co/600x400/38b2ac/ffffff?text=Honda+CB350', cc: 348, mileage: 42 },
+            { id: 8, name: 'KTM RC 390', type: 'Track Ready', pricePerDay: 1100, imageUrl: 'https://placehold.co/600x400/d69e2e/ffffff?text=KTM+RC+390', cc: 373, mileage: 28 },
+        ]
+    };
+
+    const appDiv = document.getElementById('app');
+
+    // --- Utility Functions ---
+    /** Renders a styled alert message */
+    function renderMessage(type, message) {
+        const color = type === 'error' ? 'red' : 'green';
+        return `
+            <div class="p-4 mb-4 text-sm text-${color}-800 rounded-lg bg-${color}-50" role="alert">
+                ${message}
+            </div>
+        `;
+    }
+
+    /** Helper to format currency (Indian Rupee - INR) */
+    const formatCurrency = (amount) => {
+        return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+    };
+
+    /** Calculates the number of days between two dates */
+    function calculateDays(start, end) {
+        if (!start || !end) return 0;
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+
+        if (startDate >= endDate) return 0;
+
+        const diffTime = Math.abs(endDate - startDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays;
+    }
+
+    // --- Confirmation Modal Logic ---
+
+    function renderConfirmationModal() {
+        if (state.view !== 'confirm' || !state.lastBooking) return '';
+
+        const booking = state.lastBooking;
+        const days = calculateDays(booking.startDate, booking.endDate);
+        const totalPrice = days * booking.bikePricePerDay;
+
+        return `
+            <!-- Confirmation Modal Backdrop -->
+            <div class="modal fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center backdrop-blur-sm">
+                <!-- Modal Content -->
+                <div class="bg-white rounded-xl shadow-2xl p-8 w-11/12 max-w-lg transform transition-all duration-300 scale-100">
+                    <div class="text-center">
+                        <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100">
+                            <svg class="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+                        <h3 class="mt-4 text-2xl font-bold text-gray-900">Booking Confirmed!</h3>
+                        <p class="mt-2 text-sm text-gray-500">Your ride is reserved and ready for you, ${state.username}. This confirmation will close automatically in 10 seconds.</p>
+                    </div>
+
+                    <div class="mt-5 border-t border-gray-200 pt-5 space-y-3">
+                        <h4 class="text-lg font-semibold text-indigo-600">${booking.bikeName}</h4>
+                        <p class="text-sm text-gray-700">
+                            <span class="font-medium">Pick-up:</span> ${new Date(booking.startDate).toLocaleDateString()}
+                            <span class="ml-4 font-medium">Drop-off:</span> ${new Date(booking.endDate).toLocaleDateString()}
+                        </p>
+                        <p class="text-sm text-gray-700">
+                            <span class="font-medium">Duration:</span> ${days} Day${days !== 1 ? 's' : ''}
+                        </p>
+                        <p class="text-xl font-extrabold text-gray-900">
+                            <span class="text-base font-semibold text-gray-500">Total:</span> ${formatCurrency(totalPrice)}
+                        </p>
+                        <p class="text-xs text-gray-400">Confirmation ID: ${booking.id.substring(0, 10)}...</p>
+                    </div>
+
+                    <div class="mt-6 flex justify-between">
+                        <!-- Cancel Booking button (using custom alert replacement) -->
+                        <button onclick="window.confirmCancelBooking()" type="button" class="inline-flex justify-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                            Cancel Booking
+                        </button>
+                        <button onclick="window.dismissModal()" type="button" class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+                            Go to Dashboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Function to handle the cancellation confirmation (using custom alert replacement)
+    window.confirmCancelBooking = () => {
+         // Custom alert implementation (since window.alert is disallowed)
+         const customAlert = (message) => {
+             const alertHtml = `
+                <div id="custom-alert-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center backdrop-blur-sm">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 w-11/12 max-w-xs text-center">
+                        <p class="text-lg text-gray-800 mb-4">${message}</p>
+                        <button onclick="document.getElementById('custom-alert-modal').remove()" class="py-2 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700">OK</button>
+                    </div>
+                </div>
+             `;
+             document.body.insertAdjacentHTML('beforeend', alertHtml);
+         };
+
+         customAlert("Booking has been cancelled. (In a real app, this would delete the booking from Firestore.)");
+         window.dismissModal();
+    }
+
+    window.dismissModal = () => {
+        window.appState.view = 'dashboard';
+        window.appState.lastBooking = null;
+        window.render(); // Use global render
+    }
+    
+    // --- Dummy Authentication Logic ---
+
+    window.handleInstantAccess = (event) => {
+        event.preventDefault();
+        
+        // We use the 'name' field from the form, but grab the email/password values to simulate capture.
+        const name = event.target.elements.name.value.trim();
+        const email = event.target.elements.email.value.trim();
+        const password = event.target.elements.password.value;
+        
+        if (!name) {
+            window.appState.authError = 'Please enter your name to continue.';
+            window.render(); // Use global render
+            return;
+        }
+        if (!email || !password) {
+             window.appState.authError = 'Please fill in the email and password fields.';
+             window.render(); // Use global render
+             return;
+        }
+
+        // 1. Set the user's name in state
+        window.appState.username = name;
+        
+        // 2. Move to dashboard view
+        window.appState.view = 'dashboard';
+        // Clear any displayed error on successful bypass
+        window.appState.authError = ''; 
+        window.render(); // Use global render
+    };
+
+
+    // --- Navigation Functions ---
+    window.navigateTo = (view) => {
+        window.appState.view = view;
+        window.render(); // Use global render
+    };
+    
+    // --- Search Function (FIXED: ensures render() is called for real-time filtering) ---
+    window.handleSearch = (event) => {
+        window.appState.searchTerm = event.target.value.toLowerCase();
+        window.render(); // Use global render
+    };
+    
+    // --- Support Modal (Custom Alert replacement) ---
+    window.showSupportInfo = () => {
+        const phone = '+91 98765 43210';
+        const instagram = '@MotorcycleHubIndia';
+        
+        const supportModal = `
+            <div id="support-modal" class="modal fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center backdrop-blur-sm">
+                <div class="bg-white rounded-xl shadow-2xl p-6 w-11/12 max-w-sm">
+                    <h4 class="text-xl font-bold text-indigo-600 mb-4">Customer Support</h4>
+                    <div class="space-y-3 text-gray-700">
+                        <p class="flex items-center">
+                            <i class="ph-phone-call-fill mr-3 text-lg text-green-500"></i>
+                            Call: <a href="tel:${phone}" class="ml-2 font-medium hover:text-indigo-600">${phone}</a>
+                        </p>
+                        <p class="flex items-center">
+                            <i class="ph-instagram-logo-fill mr-3 text-lg text-pink-500"></i>
+                            Instagram: <a href="https://www.instagram.com/${instagram.substring(1)}" target="_blank" class="ml-2 font-medium hover:text-indigo-600">${instagram}</a>
+                        </p>
+                        <p class="text-xs text-gray-500 pt-2">Our support team is available 24/7 to assist you.</p>
+                    </div>
+                    <div class="mt-6 text-right">
+                        <button onclick="document.getElementById('support-modal').remove()" class="py-2 px-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', supportModal);
+    };
+
+
+    // --- Shared Header and Booking Item ---
+
+    function renderHeader(currentView) {
+        return `
+            <header class="bg-indigo-600 p-4 shadow-xl sticky top-0 z-10">
+                <div class="max-w-7xl mx-auto flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-white">Motorcycle Hub - India</h1>
+                    
+                    <nav class="flex items-center space-x-6">
+                        <!-- Nav Links -->
+                        <button onclick="window.navigateTo('dashboard')" class="text-sm font-semibold transition duration-150 ${currentView === 'dashboard' ? 'text-white border-b-2 border-white' : 'text-indigo-200 hover:text-white'}">
+                            Fleet
+                        </button>
+                        <button onclick="window.navigateTo('mybookings')" class="text-sm font-semibold transition duration-150 ${currentView === 'mybookings' ? 'text-white border-b-2 border-white' : 'text-indigo-200 hover:text-white'}">
+                            My Bookings
+                        </button>
+                        
+                        <!-- User and Support -->
+                        <div class="text-white text-sm font-medium hidden sm:block">Welcome, ${window.appState.username}</div>
+
+                         <!-- Support Button (Three Dots) -->
+                        <button onclick="window.showSupportInfo()" class="text-indigo-200 hover:text-white transition duration-150 p-1 rounded-full bg-indigo-500 hover:bg-indigo-700">
+                            <i class="ph-dots-three-vertical-bold text-xl"></i>
+                        </button>
+                        
+                        <!-- Sign Out is now just navigating back to the login screen for this simplified demo -->
+                        <button onclick="window.appState.view = 'login'; window.appState.username = ''; window.render();" class="text-red-300 hover:text-white transition duration-150 text-sm font-semibold">
+                            Sign Out
+                        </button>
+                    </nav>
+                </div>
+            </header>
+        `;
+    }
+
+    const bookingItem = (booking, isMine) => {
+        const days = calculateDays(booking.startDate, booking.endDate);
+        const totalPrice = days * booking.bikePricePerDay;
+        const statusColor = isMine ? 'text-indigo-600' : 'text-gray-500';
+
+        return `
+            <li class="p-4 border-b border-gray-100 last:border-b-0 flex justify-between items-center bg-gray-50 rounded-lg mb-2">
+                <div>
+                    <p class="font-bold text-gray-900">${booking.bikeName}</p>
+                    <p class="text-xs ${statusColor}">${isMine ? 'Your Booking' : `Booked by ${booking.username}`}</p>
+                    <p class="text-xs text-gray-500 mt-1">
+                        ${new Date(booking.startDate).toLocaleDateString()} to ${new Date(booking.endDate).toLocaleDateString()}
+                    </p>
+                </div>
+                <p class="text-lg font-bold ${statusColor}">${formatCurrency(totalPrice)}</p>
+            </li>
+        `;
+    };
+    
+    // --- View Rendering Functions ---
+
+    /** Renders the Initial Login/Signup Screen (now Instant Access) */
+    function renderLoginView() {
+        const buttonText = window.appState.isLoading ? 'Loading...' : 'Continue';
+
+        return `
+            <div class="flex flex-col items-center justify-center flex-grow bg-gray-50 p-4">
+                <div class="w-full max-w-md bg-white p-8 rounded-xl shadow-2xl">
+                    <div class="text-center mb-6">
+                        <h1 class="text-4xl font-extrabold text-indigo-600">Motorcycle Hub - India</h1>
+                        <p class="text-gray-500 mt-2">Enter details for instant access</p>
+                    </div>
+                    
+                    ${window.appState.authError ? renderMessage('error', window.appState.authError) : ''}
+
+                    <form onsubmit="window.handleInstantAccess(event)">
+                        
+                        <div class="mb-4">
+                            <label for="name-input" class="block text-sm font-medium text-gray-700 mb-2">Your Name</label>
+                            <input type="text" id="name-input" name="name" required placeholder="Name is required"
+                                   class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                   maxlength="30">
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="email-input" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                            <input type="email" id="email-input" name="email" required placeholder="Any email works"
+                                   class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        
+                        <div class="mb-6">
+                            <label for="password-input" class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                            <input type="password" id="password-input" name="password" required placeholder="Any password works"
+                                   class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+
+                        <button type="submit" ${window.appState.isLoading ? 'disabled' : ''}
+                                class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50">
+                            ${buttonText}
+                        </button>
+                    </form>
+                    
+                </div>
+            </div>
+        `;
+    }
+
+    /** Renders the Main Dashboard View */
+    function renderDashboardView() {
+        // Filter bikes based on search term
+        const filteredBikes = window.appState.bikes.filter(bike => 
+            bike.name.toLowerCase().includes(window.appState.searchTerm) ||
+            bike.type.toLowerCase().includes(window.appState.searchTerm)
+        );
+
+        // Map filtered bikes to cards
+        const bikeCards = filteredBikes.map(bike => `
+            <div class="bike-card bg-white rounded-xl shadow-lg overflow-hidden border border-gray-100">
+                <img src="${bike.imageUrl}" alt="${bike.name}" class="w-full h-40 object-cover">
+                <div class="p-5">
+                    <h3 class="text-xl font-bold text-gray-800">${bike.name}</h3>
+                    <p class="text-sm text-indigo-500 font-medium">${bike.type}</p>
+                    <p class="text-xs text-gray-500 mt-1">${bike.cc}cc | ${bike.mileage} kmpl (Est.)</p>
+                    <p class="text-2xl font-extrabold text-green-600 mt-2">${formatCurrency(bike.pricePerDay)}<span class="text-sm font-normal text-gray-500"> / day</span></p>
+                    <button onclick="window.selectBike(${bike.id})"
+                            class="mt-4 w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150">
+                        Book Now
+                    </button>
+                </div>
+            </div>
+        `).join('');
+        
+        // Show all bookings from the shared, public list
+        const publicBookings = window.appState.bookings; 
+
+        return `
+            ${renderHeader('dashboard')}
+            <main class="flex-grow p-4 md:p-8 max-w-7xl mx-auto w-full">
+                <!-- Greeting -->
+                <h2 class="text-3xl font-bold text-gray-800 mb-6">Hello, ${window.appState.username}! 👋</h2>
+
+                <section class="mb-10">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Our Fleet</h3>
+                    
+                    <!-- Search Bar -->
+                    <div class="mb-6">
+                        <input type="text" id="bike-search" placeholder="Search bikes by name or type..." value="${window.appState.searchTerm}" onkeyup="window.handleSearch(event)"
+                            class="w-full p-3 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                    </div>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        ${bikeCards.length > 0 ? bikeCards : '<p class="text-lg text-gray-500 col-span-full text-center py-8">No bikes match your search criteria.</p>'}
+                    </div>
+                </section>
+
+                <section>
+                    <h3 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">All Recent Bookings (Shared Demo Feed)</h3>
+                    <div class="bg-white p-5 rounded-xl shadow-md">
+                        <ul class="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+                            ${publicBookings.length > 0
+                                ? publicBookings.map(b => bookingItem(b, b.username === window.appState.username)).join('')
+                                : '<p class="text-gray-500 text-center py-4">No recent bookings yet. Book your first ride!</p>'}
+                        </ul>
+                    </div>
+                </section>
+            </main>
+            ${renderFooter()}
+        `;
+    }
+
+    /** Renders the My Bookings View */
+    function renderMyBookingsView() {
+        // Filter the shared public bookings list to show only the current user's bookings
+        const myBookings = window.appState.bookings.filter(b => b.username === window.appState.username); 
+
+        return `
+            ${renderHeader('mybookings')}
+            <main class="flex-grow p-4 md:p-8 max-w-4xl mx-auto w-full">
+                <h2 class="text-3xl font-bold text-indigo-600 mb-6 border-b pb-2">My Reservations</h2>
+                
+                <div class="bg-white p-6 rounded-xl shadow-2xl">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4">${window.appState.username}'s Active & Past Bookings (${myBookings.length})</h3>
+                    <ul class="divide-y divide-gray-200">
+                        ${myBookings.length > 0
+                            ? myBookings.map(b => bookingItem(b, true)).join('')
+                            : '<p class="text-lg text-gray-500 text-center py-10">You have no active or past bookings. Start renting from our Fleet!</p>'}
+                    </ul>
+                </div>
+            </main>
+            ${renderFooter()}
+        `;
+    }
+
+
+    window.selectBike = (id) => {
+        window.appState.selectedBike = window.appState.bikes.find(b => b.id === id);
+        // Pre-fill dates for quick demo, starting tomorrow for one day
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const dayAfter = new Date(tomorrow);
+        dayAfter.setDate(dayAfter.getDate() + 1);
+
+        window.appState.selectedDates.start = tomorrow.toISOString().substring(0, 10);
+        window.appState.selectedDates.end = dayAfter.toISOString().substring(0, 10);
+
+        window.appState.view = 'booking';
+        window.render(); // Use global render
+    };
+
+    /** Renders the Booking Form View */
+    function renderBookingView() {
+        if (!window.appState.selectedBike) {
+            window.appState.view = 'dashboard';
+            return window.render(); // Use global render
+        }
+
+        const bike = window.appState.selectedBike;
+        const days = calculateDays(window.appState.selectedDates.start, window.appState.selectedDates.end);
+        const totalPrice = days * bike.pricePerDay;
+        const today = new Date().toISOString().substring(0, 10);
+        const securityDeposit = 2000; // INR
+
+        return `
+            <header class="bg-indigo-600 p-4 shadow-lg sticky top-0 z-10">
+                <div class="max-w-7xl mx-auto flex justify-between items-center">
+                    <button onclick="window.cancelBooking()" class="text-white hover:text-indigo-200 transition duration-150">&larr; Back to Fleet</button>
+                    <p class="text-white text-sm font-medium">Booking for ${window.appState.username}</p>
+                </div>
+            </header>
+            <main class="flex-grow p-4 md:p-8 max-w-4xl mx-auto w-full">
+                <div class="bg-white p-6 rounded-xl shadow-2xl">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6">Book Your Ride: ${bike.name}</h2>
+
+                    <div class="flex flex-col md:flex-row gap-6 mb-8 border-b pb-4">
+                        <img src="${bike.imageUrl}" alt="${bike.name}" class="w-full md:w-1/3 h-40 object-cover rounded-lg shadow-md">
+                        <div class="md:w-2/3">
+                            <p class="text-xl font-semibold text-green-600">${formatCurrency(bike.pricePerDay)} <span class="text-sm font-normal text-gray-500"> / day</span></p>
+                            <p class="text-gray-600 mt-2">${bike.type} - A powerful machine for your journey.</p>
+                            
+                            <div class="mt-3 flex space-x-4 text-gray-700">
+                                <span class="text-sm font-medium">Engine: ${bike.cc}cc</span>
+                                <span class="text-sm font-medium">Mileage: ${bike.mileage} kmpl (Est.)</span>
+                            </div>
+                            
+                            <p class="text-sm text-gray-500 mt-4">Note: A refundable security deposit of ${formatCurrency(securityDeposit)} will be added upon final checkout.</p>
+                        </div>
+                    </div>
+
+                    <form onsubmit="window.submitBooking(event)">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
+                            <!-- Start Date -->
+                            <div>
+                                <label for="start-date" class="block text-sm font-medium text-gray-700 mb-2">Pick-up Date</label>
+                                <input type="date" id="start-date" name="start" required
+                                       onchange="window.updateBookingDates(event)"
+                                       min="${today}" value="${window.appState.selectedDates.start}"
+                                       class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                            <!-- End Date -->
+                            <div>
+                                <label for="end-date" class="block text-sm font-medium text-gray-700 mb-2">Drop-off Date</label>
+                                <input type="date" id="end-date" name="end" required
+                                       onchange="window.updateBookingDates(event)"
+                                       min="${window.appState.selectedDates.start || today}" value="${window.appState.selectedDates.end}"
+                                       class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                            </div>
+                        </div>
+
+                        <!-- Summary and Button -->
+                        <div class="p-6 bg-indigo-50 rounded-lg shadow-inner flex flex-col sm:flex-row justify-between items-center mt-6">
+                            <div>
+                                <p class="text-lg font-semibold text-indigo-700">Rental Summary:</p>
+                                <p class="text-sm text-indigo-600">${days} Day${days !== 1 ? 's' : ''} rental</p>
+                            </div>
+                            <div>
+                                <p class="text-3xl font-extrabold text-indigo-800">${formatCurrency(totalPrice)}</p>
+                                <p class="text-xs text-indigo-500 text-right">Excl. Deposit</p>
+                            </div>
+                        </div>
+                        ${days <= 0 ? renderMessage('error', 'Please select a drop-off date that is after the pick-up date.') : ''}
+
+                        <button type="submit" ${days <= 0 || window.appState.isLoading ? 'disabled' : ''}
+                                class="mt-8 w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-lg font-medium text-white bg-green-600 hover:bg-green-700 transition duration-150 disabled:opacity-50">
+                            ${window.appState.isLoading ? 'Processing...' : `Confirm & Pay ${formatCurrency(totalPrice + securityDeposit)} (Incl. Deposit)`}
+                        </button>
+                    </form>
+                </div>
+            </main>
+            ${renderFooter()}
+        `;
+    }
+
+    window.cancelBooking = () => {
+        window.appState.selectedBike = null;
+        window.appState.view = 'dashboard';
+        window.render(); // Use global render
+    };
+
+    window.updateBookingDates = (event) => {
+        window.appState.selectedDates[event.target.name] = event.target.value;
+        // Ensure end date is not before start date. If start date changes, min attribute for end date updates automatically.
+        // Explicitly ensure the end date is valid if the start date was moved forward significantly.
+        const startDate = new Date(window.appState.selectedDates.start).getTime();
+        const endDate = new Date(window.appState.selectedDates.end).getTime();
+        
+        if (startDate >= endDate) {
+             // If dates are invalid, automatically move the end date forward by one day
+             const newEndDate = new Date(window.appState.selectedDates.start);
+             newEndDate.setDate(newEndDate.getDate() + 1);
+             window.appState.selectedDates.end = newEndDate.toISOString().substring(0, 10);
+        }
+
+        window.render(); // Use global render // Re-render to update the summary/price
+    };
+
+    window.submitBooking = (event) => {
+        event.preventDefault();
+        if (calculateDays(window.appState.selectedDates.start, window.appState.selectedDates.end) <= 0 || window.appState.isLoading) return;
+
+        window.appState.isLoading = true;
+        window.render(); // Use global render // Show loading state
+
+        setTimeout(() => {
+            const bike = window.appState.selectedBike;
+            const days = calculateDays(window.appState.selectedDates.start, window.appState.selectedDates.end);
+            const totalPrice = days * bike.pricePerDay;
+
+            const newBooking = {
+                id: Math.random().toString(36).substring(2, 12),
+                username: window.appState.username,
+                bikeId: bike.id,
+                bikeName: bike.name,
+                bikeType: bike.type,
+                bikePricePerDay: bike.pricePerDay,
+                startDate: window.appState.selectedDates.start,
+                endDate: window.appState.selectedDates.end,
+                totalPrice: totalPrice,
+                rentalDays: days,
+                securityDeposit: 2000,
+                timestamp: Date.now()
+            };
+            
+            window.appState.bookings.unshift(newBooking);
+            window.appState.lastBooking = newBooking;
+            window.appState.view = 'confirm';
+
+            window.appState.isLoading = false;
+            window.render(); // Use global render // Re-render to show success or error
+
+            // --- NEW LOGIC: Automatically dismiss modal after 10 seconds (10000 ms) ---
+            setTimeout(() => {
+                // Only dismiss if the user hasn't already manually closed it or navigated away
+                if (window.appState.view === 'confirm') {
+                    window.dismissModal();
+                }
+            }, 10000);
+            // -----------------------------------------------------------------------------
+        }, 800); // Simulate network delay
+    };
+
+    /** Renders the Footer */
+    function renderFooter() {
+         return `
+            <footer class="bg-gray-800 text-white p-6 mt-8">
+                <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center text-center md:text-left">
+                    <div class="mb-4 md:mb-0">
+                        <h4 class="text-xl font-bold mb-1">Motorcycle Hub</h4>
+                        <p class="text-sm text-gray-400">Your trusted partner for bike rentals in India.</p>
+                    </div>
+                    <div class="space-y-2 md:space-y-0 md:space-x-8 flex flex-col md:flex-row text-sm">
+                        <p>
+                            <span class="font-semibold text-indigo-300">Call Us:</span>
+                            <a href="tel:+919876543210" class="text-white hover:text-indigo-400 block md:inline-block">+91 98765 43210</a>
+                        </p>
+                        <p>
+                            <span class="font-semibold text-indigo-300">Instagram:</span>
+                            <a href="https://www.instagram.com/MotorcycleHubIndia" target="_blank" class="text-white hover:text-indigo-400 block md:inline-block">@MotorcycleHubIndia</a>
+                        </p>
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-gray-700 text-center text-xs text-gray-500">
+                    &copy; 2025 Motorcycle Hub. All rights reserved. (Project Submission)
+                </div>
+            </footer>
+        `;
+    }
+
+    /** Main Render Function */
+    function render() {
+        let htmlContent = '';
+        switch (window.appState.view) {
+            case 'login':
+                htmlContent = renderLoginView();
+                break;
+            case 'dashboard':
+                htmlContent = renderDashboardView();
+                break;
+            case 'mybookings':
+                htmlContent = renderMyBookingsView();
+                break;
+            case 'booking':
+                htmlContent = renderBookingView();
+                break;
+            case 'confirm':
+                htmlContent = renderDashboardView(); // Render dashboard content underneath the modal
+                htmlContent += renderConfirmationModal();
+                break;
+        }
+        appDiv.innerHTML = htmlContent;
+    }
+    window.render = render; // Make render global
+
+    // --- Start Application ---
+    window.onload = window.render;
+</script>
+
+</body>
+</html>
